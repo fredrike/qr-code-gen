@@ -161,8 +161,28 @@
             border: 2px solid #000000;
         }
 
-        .download-btn {
+        .download-group {
             margin-top: 20px;
+            display: flex;
+            gap: 10px;
+            align-items: stretch;
+        }
+
+        .export-format {
+            padding: 15px;
+            background-color: #ffffff;
+            color: #000000;
+            border: 2px solid #000000;
+            font-size: 1rem;
+            font-weight: 600;
+            cursor: pointer;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            font-family: inherit;
+        }
+
+        .download-btn {
+            flex: 1;
             background-color: #ffffff;
             color: #000000;
             border: 2px solid #000000;
@@ -245,6 +265,12 @@
 
             #qrcode {
                 background-color: #000000;
+                border-color: #ffffff;
+            }
+
+            .export-format {
+                background-color: #000000;
+                color: #ffffff;
                 border-color: #ffffff;
             }
 
@@ -385,7 +411,14 @@
 
         <div class="qr-container" id="qr-container">
             <div id="qrcode"></div>
-            <button class="download-btn" id="download-btn">Download QR Code</button>
+            <div class="download-group">
+                <select id="export-format" class="export-format">
+                    <option value="png">PNG</option>
+                    <option value="svg">SVG</option>
+                    <option value="eps">EPS</option>
+                </select>
+                <button class="download-btn" id="download-btn">Download QR Code</button>
+            </div>
         </div>
     </div>
 
@@ -405,6 +438,7 @@
         const generateBtn = document.getElementById('generate-btn');
         const clearBtn = document.getElementById('clear-btn');
         const downloadBtn = document.getElementById('download-btn');
+        const exportFormat = document.getElementById('export-format');
         const qrContainer = document.getElementById('qr-container');
         const qrcodeDiv = document.getElementById('qrcode');
         const errorMessage = document.getElementById('error-message');
@@ -589,16 +623,172 @@
         }
 
         // Download QR Code
-        function downloadQRCode() {
+        async function downloadQRCode() {
             if (!qrCode) {
                 showError('No QR code to download');
                 return;
             }
 
-            qrCode.download({
-                name: "qrcode",
-                extension: "png"
+            const format = exportFormat.value;
+
+            if (format === 'png' || format === 'svg') {
+                qrCode.download({
+                    name: "qrcode",
+                    extension: format
+                });
+            } else if (format === 'eps') {
+                // For EPS, we need to get the SVG data and convert it
+                try {
+                    const svgData = await qrCode.getRawData('svg');
+                    const svgBlob = new Blob([svgData], { type: 'image/svg+xml' });
+                    const svgText = await svgBlob.text();
+                    
+                    // Convert SVG to EPS
+                    const epsData = convertSVGtoEPS(svgText);
+                    const epsBlob = new Blob([epsData], { type: 'application/postscript' });
+                    const url = URL.createObjectURL(epsBlob);
+                    
+                    const a = document.createElement('a');
+                    a.href = url;
+                    a.download = 'qrcode.eps';
+                    document.body.appendChild(a);
+                    a.click();
+                    document.body.removeChild(a);
+                    URL.revokeObjectURL(url);
+                } catch (error) {
+                    showError('Error generating EPS: ' + error.message);
+                }
+            }
+        }
+
+        // Convert SVG to EPS format
+        function convertSVGtoEPS(svgText) {
+            // Parse SVG to get dimensions
+            const parser = new DOMParser();
+            const svgDoc = parser.parseFromString(svgText, 'image/svg+xml');
+            const svgElement = svgDoc.documentElement;
+            
+            const width = parseInt(svgElement.getAttribute('width')) || 256;
+            const height = parseInt(svgElement.getAttribute('height')) || 256;
+            
+            // Create EPS header
+            let eps = '%!PS-Adobe-3.0 EPSF-3.0\n';
+            eps += `%%BoundingBox: 0 0 ${width} ${height}\n`;
+            eps += '%%Creator: QR Code Generator\n';
+            eps += '%%Title: QR Code\n';
+            eps += '%%EndComments\n\n';
+            
+            // Add PostScript procedures
+            eps += '/rect { newpath 4 2 roll moveto 1 index 0 rlineto 0 exch rlineto neg 0 rlineto closepath } def\n';
+            eps += '/circle { 0 360 arc closepath } def\n\n';
+            
+            // Flip coordinate system (SVG is top-down, PS is bottom-up)
+            eps += `0 ${height} translate\n`;
+            eps += '1 -1 scale\n\n';
+            
+            // Parse SVG and convert shapes to PostScript
+            const rects = svgElement.querySelectorAll('rect');
+            const circles = svgElement.querySelectorAll('circle');
+            const paths = svgElement.querySelectorAll('path');
+            
+            // Process rectangles
+            rects.forEach(rect => {
+                const x = parseFloat(rect.getAttribute('x')) || 0;
+                const y = parseFloat(rect.getAttribute('y')) || 0;
+                const w = parseFloat(rect.getAttribute('width')) || 0;
+                const h = parseFloat(rect.getAttribute('height')) || 0;
+                const fill = rect.getAttribute('fill') || '#000000';
+                
+                if (fill !== 'none' && fill !== 'transparent') {
+                    const color = hexToRGB(fill);
+                    eps += `${color.r} ${color.g} ${color.b} setrgbcolor\n`;
+                    eps += `${x} ${y} ${w} ${h} rect fill\n`;
+                }
             });
+            
+            // Process circles
+            circles.forEach(circle => {
+                const cx = parseFloat(circle.getAttribute('cx')) || 0;
+                const cy = parseFloat(circle.getAttribute('cy')) || 0;
+                const r = parseFloat(circle.getAttribute('r')) || 0;
+                const fill = circle.getAttribute('fill') || '#000000';
+                
+                if (fill !== 'none' && fill !== 'transparent') {
+                    const color = hexToRGB(fill);
+                    eps += `${color.r} ${color.g} ${color.b} setrgbcolor\n`;
+                    eps += `${cx} ${cy} ${r} circle fill\n`;
+                }
+            });
+            
+            // Process paths (basic support)
+            paths.forEach(path => {
+                const d = path.getAttribute('d') || '';
+                const fill = path.getAttribute('fill') || '#000000';
+                
+                if (fill !== 'none' && fill !== 'transparent' && d) {
+                    const color = hexToRGB(fill);
+                    eps += `${color.r} ${color.g} ${color.b} setrgbcolor\n`;
+                    eps += convertPathToPS(d);
+                    eps += 'fill\n';
+                }
+            });
+            
+            eps += '\nshowpage\n';
+            eps += '%%EOF\n';
+            
+            return eps;
+        }
+
+        // Convert hex color to RGB (0-1 range)
+        function hexToRGB(hex) {
+            const result = /^#?([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i.exec(hex);
+            return result ? {
+                r: (parseInt(result[1], 16) / 255).toFixed(3),
+                g: (parseInt(result[2], 16) / 255).toFixed(3),
+                b: (parseInt(result[3], 16) / 255).toFixed(3)
+            } : { r: 0, g: 0, b: 0 };
+        }
+
+        // Convert SVG path to PostScript (simplified)
+        function convertPathToPS(pathData) {
+            let ps = 'newpath\n';
+            const commands = pathData.match(/[MmLlHhVvCcSsQqTtAaZz][^MmLlHhVvCcSsQqTtAaZz]*/g);
+            
+            if (!commands) return ps + 'closepath\n';
+            
+            commands.forEach(cmd => {
+                const type = cmd[0];
+                const coords = cmd.slice(1).trim().split(/[\s,]+/).map(parseFloat);
+                
+                switch (type) {
+                    case 'M':
+                        if (coords.length >= 2) {
+                            ps += `${coords[0]} ${coords[1]} moveto\n`;
+                        }
+                        break;
+                    case 'L':
+                        if (coords.length >= 2) {
+                            ps += `${coords[0]} ${coords[1]} lineto\n`;
+                        }
+                        break;
+                    case 'H':
+                        if (coords.length >= 1) {
+                            ps += `${coords[0]} currentpoint exch pop lineto\n`;
+                        }
+                        break;
+                    case 'V':
+                        if (coords.length >= 1) {
+                            ps += `currentpoint pop ${coords[0]} lineto\n`;
+                        }
+                        break;
+                    case 'Z':
+                    case 'z':
+                        ps += 'closepath\n';
+                        break;
+                }
+            });
+            
+            return ps;
         }
 
         // Event listeners
