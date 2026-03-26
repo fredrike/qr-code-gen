@@ -24,7 +24,7 @@
         }
 
         .container {
-            max-width: 600px;
+            max-width: 650px;
             width: 100%;
             border: 2px solid #000000;
             padding: 40px;
@@ -159,6 +159,13 @@
             padding: 20px;
             background-color: #ffffff;
             border: 2px solid #000000;
+            max-width: 100%;
+        }
+
+        #qrcode canvas {
+            max-width: 100%;
+            height: auto;
+            display: block;
         }
 
         .download-group {
@@ -400,6 +407,17 @@
                     <span class="color-label" id="bg-color-label">#ffffff</span>
                 </div>
             </div>
+
+            <div class="input-group">
+                <label>
+                    <input 
+                        type="checkbox" 
+                        id="transparent-bg"
+                        style="width: auto; margin-right: 8px;"
+                    >
+                    Transparent Background
+                </label>
+            </div>
         </div>
 
         <div class="button-grid">
@@ -435,6 +453,7 @@
         const bgColor = document.getElementById('bg-color');
         const fgColorLabel = document.getElementById('fg-color-label');
         const bgColorLabel = document.getElementById('bg-color-label');
+        const transparentBg = document.getElementById('transparent-bg');
         const generateBtn = document.getElementById('generate-btn');
         const clearBtn = document.getElementById('clear-btn');
         const downloadBtn = document.getElementById('download-btn');
@@ -453,6 +472,12 @@
 
         bgColor.addEventListener('input', (e) => {
             bgColorLabel.textContent = e.target.value.toUpperCase();
+        });
+
+        // Toggle background color input when transparency checkbox changes
+        transparentBg.addEventListener('change', (e) => {
+            bgColor.disabled = e.target.checked;
+            bgColorLabel.style.opacity = e.target.checked ? '0.5' : '1';
         });
 
         // URL validation
@@ -488,6 +513,7 @@
             params.set('cornerDot', cornerDotStyle.value);
             params.set('fg', fgColor.value);
             params.set('bg', bgColor.value);
+            if (transparentBg.checked) params.set('transparent', '1');
             
             window.history.replaceState(null, '', '#' + params.toString());
         }
@@ -528,6 +554,11 @@
                 bgColor.value = params.get('bg');
                 bgColorLabel.textContent = params.get('bg').toUpperCase();
             }
+            if (params.has('transparent')) {
+                transparentBg.checked = params.get('transparent') === '1';
+                bgColor.disabled = transparentBg.checked;
+                bgColorLabel.style.opacity = transparentBg.checked ? '0.5' : '1';
+            }
             
             updateInProgress = false;
             return hasSettings;
@@ -545,6 +576,9 @@
             bgColor.value = '#ffffff';
             fgColorLabel.textContent = '#000000';
             bgColorLabel.textContent = '#FFFFFF';
+            transparentBg.checked = false;
+            bgColor.disabled = false;
+            bgColorLabel.style.opacity = '1';
             qrcodeDiv.innerHTML = '';
             qrContainer.classList.remove('visible');
             errorMessage.classList.remove('visible');
@@ -572,7 +606,7 @@
             // Get options
             const size = parseInt(sizeInput.value);
             const colorDark = fgColor.value;
-            const colorLight = bgColor.value;
+            const colorLight = transparentBg.checked ? 'rgba(0,0,0,0)' : bgColor.value;
             const correctLevel = errorLevel.value;
             const style = qrStyle.value;
 
@@ -861,6 +895,13 @@
         });
 
         bgColor.addEventListener('change', () => {
+            saveSettingsToURL();
+            if (urlInput.value.trim() && qrContainer.classList.contains('visible')) {
+                generateQRCode();
+            }
+        });
+
+        transparentBg.addEventListener('change', () => {
             saveSettingsToURL();
             if (urlInput.value.trim() && qrContainer.classList.contains('visible')) {
                 generateQRCode();
